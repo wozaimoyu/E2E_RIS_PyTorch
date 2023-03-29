@@ -127,7 +127,7 @@ class Receiver(nn.Module):
         return torch.sigmoid(self.bn2(self.map2(self.bn1(F.relu(self.map1(x))))))
 
 
-def ini_weights(sys, device: str = "cpu"):
+def ini_weights(sys):
     B = BS(
         input_size=sys.k * sys.Num_User,
         hidden_size=4 * sys.M,
@@ -150,7 +150,7 @@ def ini_weights(sys, device: str = "cpu"):
     return B, Ris, R
 
 
-def Channel(t_data, channel, device: str = "cpu"):
+def Channel(t_data, channel):
     """
     this code performs a channel operation on a given input data tensor "t_data" using a complex-valued channel
     "channel". The operation involves transposing the data tensor, extracting the real and imaginary components of
@@ -160,15 +160,21 @@ def Channel(t_data, channel, device: str = "cpu"):
 
     :param t_data:
     :param channel:
-    :param device:
 
     :return:
     """
-    cat = np.concatenate
+    # cat = np.concatenate
+    # t_data = torch.transpose(t_data, 1, 0)
+    # hr, hi = channel.real, channel.imag
+    # h1, h2 = cat([hr, -hi], 1), cat([hi, hr], 1)
+    # channel = torch.from_numpy(cat([h1, h2], 0)).float().to(device)
+    # r_data = torch.matmul(channel, t_data)
+    # return torch.transpose(r_data, 1, 0)
+    cat = torch.cat
     t_data = torch.transpose(t_data, 1, 0)
     hr, hi = channel.real, channel.imag
     h1, h2 = cat([hr, -hi], 1), cat([hi, hr], 1)
-    channel = torch.from_numpy(cat([h1, h2], 0)).float()
+    channel = cat([h1, h2], 0).float()
     r_data = torch.matmul(channel, t_data)
     return torch.transpose(r_data, 1, 0)
 
@@ -177,7 +183,7 @@ criterion = nn.BCELoss()
 torch.autograd.set_detect_anomaly(True)
 
 
-def train(X: torch.tensor, Y, sys, SNR_train, device: str = "cpu"):
+def train(X, Y, sys, SNR_train):
     X_train = X
     Y_train = Y
     k = sys.k
@@ -217,12 +223,19 @@ def train(X: torch.tensor, Y, sys, SNR_train, device: str = "cpu"):
     for epoch in range(sys.Epoch_train):
         error_epoch = 0
         for index in range(total_batch):
-            noise_train = torch.from_numpy(
-                np.random.rand(
-                    sys.Batch_Size,
-                    sys.Num_User_Antenna * 2
-                ) * np.sqrt(1 / SNR_train) / np.sqrt(2)
-            ).float()
+            # noise_train = torch.from_numpy(
+            #     np.random.rand(
+            #         sys.Batch_Size,
+            #         sys.Num_User_Antenna * 2
+            #     ) * np.sqrt(1 / SNR_train) / np.sqrt(2)
+            # ).float().to(device)
+            noise_train = torch.randn(
+                sys.Batch_Size,
+                sys.Num_User_Antenna * 2
+            ) / torch.sqrt(
+                torch.tensor(SNR_train)
+            ) / torch.sqrt(torch.tensor(2.0))
+
             idx = np.random.randint(X.shape[0], size=sys.Batch_Size)
 
             B.zero_grad()
@@ -230,23 +243,23 @@ def train(X: torch.tensor, Y, sys, SNR_train, device: str = "cpu"):
             for i in range(Num_User):
                 R[i].zero_grad()
 
-            x_data = B(torch.from_numpy(ae.onehot2bit(X_train[idx, :])).float())
-            target = torch.from_numpy(ae.onehot2bit(Y_train[idx, :])).float()
+            x_data = B(ae.onehot2bit(X_train[idx, :]))
+            target = ae.onehot2bit(Y_train[idx, :])
             norm = torch.empty(1, sys.Batch_Size)
             norm[0, :] = torch.norm(x_data, 2, 1)
 
             # noise_train.to(device)
             # x_data.to(device)
-            # norm.to(device)
+            # norm = norm.to(device)
             # target.to(device)
 
             x_data = x_data / torch.t(norm)
-            ri_data = Channel(x_data, sys.Channel_BS2RIS, device)
+            ri_data = Channel(x_data, sys.Channel_BS2RIS)
             ro_data = Ris(ri_data)
             y_data = Channel(
-                ro_data, sys.Channel_RIS2User, device
+                ro_data, sys.Channel_RIS2User
             ) + Channel(
-                x_data, sys.Channel_BS2User, device
+                x_data, sys.Channel_BS2User
             ) + noise_train
 
             error_user = 0
@@ -277,33 +290,27 @@ def train(X: torch.tensor, Y, sys, SNR_train, device: str = "cpu"):
             b_optimizer.param_groups[0]['lr'] /= lr_factor
 
             SNR_vali = np.array([-5, 0, 5, 10, 15, 20])
-            ber = np.zeros(SNR_vali.shape)
+            ber = torch.zeros(SNR_vali.shape)
             for i_snr in range(SNR_vali.shape[0]):
                 SNR = 10 ** (SNR_vali[i_snr] / 10) / sys.Rece_Ampli ** 2
                 sym_index_test, X_test, Y_test = ae.generate_transmit_data(
                     sys.M, Num_User, sys.Num_vali, seed=random.randint(0, 1000)
                 )
-                Y_pred, y_receiver = test(X_test, sys, SNR, B, Ris, R, device)
+                Y_pred, y_receiver = test(X_test, sys, SNR, B, Ris, R)
                 ber[i_snr] = ae.BER(X_test, sys, Y_pred, sys.Num_vali)
                 print(f'The BER at SNR={SNR_vali[i_snr]} is {ber[i_snr]:0.8f}')
             Acc.append(ber[3])
             if ber[1] < best_ber:
                 Save_Model(B, Ris, R, Num_User)
                 best_ber = ber[1]
-            power = torch.mean(
-                torch.sum(
-                    (
-                            Channel(ro_data, sys.Channel_RIS2User, device) +
-                            Channel(x_data, sys.Channel_BS2User, device)
-                    ) ** 2,
-                    1
-                )
-            )
+            power = torch.mean(torch.sum(
+                (Channel(ro_data, sys.Channel_RIS2User) + Channel(x_data, sys.Channel_BS2User)) ** 2, 1
+            ))
             SNR_train = ((2.5 * 1e-6) / power / (10 ** 0.5 * 1e-7)).detach().cpu().numpy()
     return R_error
 
 
-def test(X, sys, SNR_test, B=None, Ris=None, R=None, device: str = "cpu"):
+def test(X, sys, SNR_test, B=None, Ris=None, R=None):
     """
     Simulates the transmission of a given signal over a wireless communication system and returns the predicted received signal and the actual received signal.
 
@@ -325,30 +332,31 @@ def test(X, sys, SNR_test, B=None, Ris=None, R=None, device: str = "cpu"):
     Num_User = sys.Num_User
 
     if B is None:
-        B, Ris, R = ini_weights(sys, device=device)
+        B, Ris, R = ini_weights(sys)
         B, Ris, R = Load_Model(B, Ris, R, Num_User)
 
     X_test = X
     num_test = X_test.shape[0]
-    noise_test = torch.from_numpy(
-        np.random.randn(
-            num_test, sys.Num_User_Antenna * 2
-        ) * np.sqrt(1 / (2 * SNR_test))
-    ).float().to(device)
+    # noise_test = torch.from_numpy(
+    #     np.random.randn(
+    #         num_test, sys.Num_User_Antenna * 2
+    #     ) * np.sqrt(1 / (2 * SNR_test))
+    # ).float().to(device)
+    noise_test = torch.randn(num_test, sys.Num_User_Antenna * 2).float() * torch.sqrt(torch.tensor(1 / (2 * SNR_test)))
 
-    x_data = B(torch.from_numpy(ae.onehot2bit(X_test)).float()).to(device)
-    norm = torch.empty(1, num_test).to(device)
+    x_data = B(ae.onehot2bit(X_test))
+    norm = torch.empty(1, num_test)
     norm[0, :] = torch.norm(x_data, 2, 1)
     x_data = x_data / torch.t(norm)
 
     sio.savemat('x_data_' + str(sys.Num_RIS_Element) + '.mat', mdict={'x_data': x_data.cpu().detach().numpy()})
 
-    ri_data = Channel(x_data, sys.Channel_BS2RIS, device)
+    ri_data = Channel(x_data, sys.Channel_BS2RIS)
     ro_data = Ris(ri_data)
     y_data = Channel(
-        ro_data, sys.Channel_RIS2User, device
+        ro_data, sys.Channel_RIS2User
     ) + Channel(
-        x_data, sys.Channel_BS2User, device
+        x_data, sys.Channel_BS2User
     ) + noise_test
 
     r_decision = []
@@ -359,8 +367,8 @@ def test(X, sys, SNR_test, B=None, Ris=None, R=None, device: str = "cpu"):
         [num_test, k * Num_User]
     )
 
-    pred = r_decision.detach().cpu().numpy()
-    y_rate = y_data.detach().cpu().numpy()
+    pred = r_decision.detach()
+    y_rate = y_data.detach()
 
     return pred, y_rate
 

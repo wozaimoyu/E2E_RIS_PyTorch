@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 
 def rayleigh_chan(Ta: int, Ra: int, L: int):
@@ -10,11 +11,19 @@ def rayleigh_chan(Ta: int, Ra: int, L: int):
     :param L:
     :return: Rayleigh Channel distribution
     """
-    rand = np.random.normal
-    H = np.empty((L, Ra, Ta), dtype=np.complex128)
+    # rand = np.random.normal
+    # H = np.empty((L, Ra, Ta), dtype=np.complex128)
+    # for l in range(L):
+    #     G = rand(scale=1 / np.sqrt(2), size=(Ra, Ta))
+    #     J = rand(scale=1 / np.sqrt(2), size=(Ra, Ta))
+    #     H[l, :, :] = G + 1j * J
+    # return H
+    rand = torch.randn
+    H = torch.empty((L, Ra, Ta), dtype=torch.complex128)
+    r2 = np.sqrt(2)
     for l in range(L):
-        G = rand(scale=1 / np.sqrt(2), size=(Ra, Ta))
-        J = rand(scale=1 / np.sqrt(2), size=(Ra, Ta))
+        G = rand((Ra, Ta)) / r2
+        J = rand((Ra, Ta)) / r2
         H[l, :, :] = G + 1j * J
     return H
 
