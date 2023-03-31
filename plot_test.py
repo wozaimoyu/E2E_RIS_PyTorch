@@ -7,11 +7,14 @@ import numpy as np
 import scipy.io as sio
 import torch
 
-user32 = ctypes.windll.user32
-user32.SetProcessDPIAware()
+try:
+    user32 = ctypes.windll.user32
+    user32.SetProcessDPIAware()
+except AttributeError:
+    print("Unable to import windll..")
 
 # Load the .mat file
-mat = sio.loadmat(r"figure\E2E_Ber_256.mat")
+mat = sio.loadmat(r"figure/E2E_Ber_256.mat")
 Ber_E2E = mat['Ber']
 BER256_e2e = np.mean(Ber_E2E, axis=0)
 
