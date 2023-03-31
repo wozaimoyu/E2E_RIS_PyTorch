@@ -143,7 +143,7 @@ SNR_dB_train = torch.tensor([2, 1, 0, 0, -2, -5, -8, -6, 0, 2, 4])
 
 SNR_dB = torch.arange(-5, 21, 1)  # Generate graph at these values
 
-Sample = 10
+Sample = 1
 
 Ber = torch.zeros([Sample, User_dis.shape[0], SNR_dB.shape[0]])
 mean_rate = torch.zeros([Sample, User_dis.shape[0]])
@@ -183,6 +183,7 @@ for s in range(Sample):
 
         ber = torch.zeros(SNR_dB.shape)
 
+        print("Calculating BER")
         for i_snr in range(SNR_dB.shape[0]):
             SNR = 10 ** (SNR_dB[i_snr] / 10) / sys.Rece_Ampli ** 2
             _, X_test, Y_test = ae.generate_transmit_data(

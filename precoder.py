@@ -6,6 +6,7 @@ import scipy.io as sio
 import torch
 from torch import nn, optim
 import torch.nn.functional as F
+from tqdm.auto import tqdm
 
 import autoencoder as ae
 
@@ -219,11 +220,14 @@ def train(X, Y, sys, SNR_train):
         print("no regularization")
 
     R_error, Acc, best_ber = [], [], 1
+    pbar = tqdm(total=sys.Epoch_train)
     for epoch in range(sys.Epoch_train):
         error_epoch = 0
         for index in range(total_batch):
-            if index % 1 == 0:
-                print(f"\r\t\tEpoch: {epoch}/{sys.Epoch_train}, Batch: {index}/{total_batch}", end="")
+            # if index % 30 == 0:
+            #     print(f"\r\t\tEpoch: {epoch}/{sys.Epoch_train}, Batch: {index}/{total_batch}", end="")
+            pbar.update(1 / total_batch)
+            pbar.set_description(f"Epoch {epoch} ({index + 1:3d}/{total_batch:3d})")
             if type(SNR_train) is not torch.Tensor:
                 # SNR_train = torch.tensor(SNR_train)
                 raise TypeError("Not Tensor!")
