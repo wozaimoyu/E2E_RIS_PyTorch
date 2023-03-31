@@ -5,48 +5,29 @@ import torch
 def onehot2bit(X):
     """
     This function converts one-hot encoded data to bit data using a pre-defined bit sequence (BIT_16).
-    :param X: one-hot encoded data
-    :return: bit: bit data
     """
-    BIT_16 = torch.tensor([[0, 0, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0], [0, 0, 1, 1],
-                           [0, 1, 0, 0], [0, 1, 0, 1], [0, 1, 1, 0], [0, 1, 1, 1],
-                           [1, 0, 0, 0], [1, 0, 0, 1], [1, 0, 1, 0], [1, 0, 1, 1],
-                           [1, 1, 0, 0], [1, 1, 0, 1], [1, 1, 1, 0], [1, 1, 1, 1]], dtype=torch.float)
-
+    BIT_16 = torch.tensor(
+        [[0, 0, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0], [0, 0, 1, 1],
+         [0, 1, 0, 0], [0, 1, 0, 1], [0, 1, 1, 0], [0, 1, 1, 1],
+         [1, 0, 0, 0], [1, 0, 0, 1], [1, 0, 1, 0], [1, 0, 1, 1],
+         [1, 1, 0, 0], [1, 1, 0, 1], [1, 1, 1, 0], [1, 1, 1, 1]],
+        dtype=torch.float
+    )
     if type(X) is not torch.Tensor:
-        print("\t\tConverting to tensor..")
-        X = torch.tensor(X, dtype=torch.float)
+        # X = torch.tensor(X, dtype=torch.float)
+        raise TypeError(f"X is not Tensor")
     bit = torch.matmul(X, BIT_16)
-
     return bit
 
 
 def generate_transmit_data(M, J, num, seed=0):
-    """
-    This function generates transmit data with a given number of symbols.
-
-    Args:
-        M (int): the number of modulation symbols.
-        J (int): the number of antennas.
-        num (int): the number of symbols.
-        seed (int): seed for the random number generator.
-
-    Returns:
-        symbol_index (ndarray): an array of indices of the transmitted symbols.
-        X (ndarray): an array of one-hot-encoded transmitted symbols.
-        Y (ndarray): an array of one-hot-encoded received symbols, which is the same as X.
-    """
-    # print(f'\tGenerating transmit data: M = {M}, seed = {seed}')
     torch.manual_seed(seed)
     symbol_index = torch.randint(M, size=(num * J,))
     X = torch.zeros((num * J, M), dtype=torch.float32)
-    # Y = np.zeros((num * J, M), dtype='float32')
-    # for i in range(num * J):
-    #     X[i, symbol_index[i]] = 1
     X[torch.arange(num * J), symbol_index] = 1
     X = X.reshape(num, M * J)
     Y = X
-    return symbol_index, X, Y
+    return X, Y
 
 
 def BER(X, sys, Y_pred, num_test):
@@ -58,15 +39,9 @@ def BER(X, sys, Y_pred, num_test):
     :param num_test: number of test samples
     :return: ber: bit error rate
     """
+    # Convert prediction to binary data
     Y_pred[Y_pred < 0.5] = 0
     Y_pred[Y_pred >= 0.5] = 1
-    # Y_pred = np.reshape(Y_pred, [num_test * sys.Num_User, sys.k])
-    # X = np.reshape(X, [num_test * sys.Num_User, sys.M])
-    # X_bit = onehot2bit(X)
-    # X_bit = np.reshape(X_bit, [num_test * sys.Num_User, sys.k])
-    # err = np.sum(np.abs(Y_pred - X_bit))
-    # ber = err / (num_test * sys.Num_User * sys.k)
-    # return ber
 
     Y_pred = Y_pred.view(num_test * sys.Num_User, sys.k)
     X = X.view(num_test * sys.Num_User, sys.M)

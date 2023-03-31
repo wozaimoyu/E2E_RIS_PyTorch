@@ -16,9 +16,9 @@ BER128_e2e = squeeze(mean(BER128_e2e.Ber,1));
 BER256_e2e = load('E2E_Ber_256.mat');
 BER256_e2e = squeeze(mean(BER256_e2e.Ber,1));
 
-for i=1:2
+for i=1:1
     close all;
-    file  = sprintf("E2E_Ber_256_1.mat");  % Change this
+    file  = sprintf("E2E_Ber_1024_0.mat");  % Change this
     %fig1 = sprintf("fig_a_%02d.png", i);
     %fig2 = sprintf("fig_b_%02d.png", i);
     fig1 = sprintf("mean_fig_a.gif");

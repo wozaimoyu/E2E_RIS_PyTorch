@@ -2,20 +2,22 @@ import random
 from pathlib import Path
 
 import numpy as np
-import scipy.io as sio
+# import scipy.io as sio
 import torch
 from torch import nn, optim
 import torch.nn.functional as F
 from tqdm.auto import tqdm
 
 import autoencoder as ae
+import sys_model
 
 t_learning_rate = 0.001
 r_learning_rate = 0.001
 ris_learning_rate = 0.001
+
 print_interval = 30
-g_weight_gain = 0.1
-g_bias_gain = 0.1
+# g_weight_gain = 0.1
+# g_bias_gain = 0.1
 
 optim_betas = (0.9, 0.999)
 weight_gain = 1
@@ -127,10 +129,6 @@ class Receiver(nn.Module):
         return torch.sigmoid(self.bn2(self.map2(self.bn1(F.relu(self.map1(x))))))
 
 
-# def get_generator_input_sampler():
-#     return lambda m, n: torch.rand(m, n)
-
-
 def ini_weights(sys):
     B = BS(
         input_size=sys.k * sys.Num_User,
@@ -171,22 +169,30 @@ def Channel(t_data, channel):
     return torch.transpose(r_data, 1, 0)
 
 
+# c1 = nn.MSELoss()
 criterion = nn.BCELoss()
 
 
-# are these used?
-# gi_sampler = get_generator_input_sampler()
-# c1 = nn.MSELoss()
-
-
-def train(X, Y, sys, SNR_train):
-    print("Training Started..")
+def train(X, Y, sys: sys_model.Para, SNR_train: torch.Tensor):
     X_train = X
     Y_train = Y
     k = sys.k
     Num_User = sys.Num_User
     lr_factor = sys.LR_Factor
     total_batch = int(X.shape[0] / sys.Batch_Size)  # num_total/batch_size
+    print(
+        f"Training Started..\n"
+        f"\tk: {sys.k}, M: {sys.M} Num User: {sys.Num_User}, LR Factor: {sys.LR_Factor}, SNR: {sys.SNR_train_db:.3f}\n"
+        f"\tBS: {sys.Pos_BS.tolist()}, RIS: {sys.Pos_RIS.tolist()}, User: {sys.Pos_User.tolist()}\n"
+        f"\tEpoch: {sys.Epoch_train}, Batch Size: {sys.Batch_Size}, Total Batch: {total_batch}\n"
+        f"\tBS Antenna: {sys.Num_BS_Antenna}, RIS Element: {sys.Num_RIS_Element}, User Antenna: {sys.Num_BS_Antenna}\n"
+        f"\tBS2RIS Dis: {sys.Dis_BS2RIS.squeeze().tolist()}\n"
+        f"\tBS2User Dis: {sys.Dis_BS2User.squeeze().tolist()}\n"
+        f"\tRIS2User Dis: {sys.Dis_RIS2User.squeeze().tolist()}\n"
+    )
+
+    if total_batch <= 0:
+        raise ValueError(f"Number of Batch can not be 0 or less")
 
     B, Ris, R = ini_weights(sys=sys)
     if sys.load_model == 1:
@@ -211,23 +217,24 @@ def train(X, Y, sys, SNR_train):
         ))
 
     if weight_decay > 0:
-        b_reg = Regularization(B, weight_decay, p=2)
-        ris_reg = Regularization(Ris, weight_decay, p=2)
-        r_reg = []
-        for i in range(Num_User):
-            r_reg.append(Regularization(R[i], weight_decay, p=2))
+        # todo: What is regularization?
+        print("Regularization skipped")
+        # b_reg = Regularization(B, weight_decay, p=2)
+        # ris_reg = Regularization(Ris, weight_decay, p=2)
+        # r_reg = []
+        # for i in range(Num_User):
+        #     r_reg.append(Regularization(R[i], weight_decay, p=2))
     else:
         print("no regularization")
 
     R_error, Acc, best_ber = [], [], 1
-    pbar = tqdm(total=sys.Epoch_train)
+    pbar = tqdm(total=sys.Epoch_train)  # progress bar
     for epoch in range(sys.Epoch_train):
         error_epoch = 0
+        pbar.set_description(f"E {epoch}")
         for index in range(total_batch):
-            # if index % 30 == 0:
-            #     print(f"\r\t\tEpoch: {epoch}/{sys.Epoch_train}, Batch: {index}/{total_batch}", end="")
             pbar.update(1 / total_batch)
-            pbar.set_description(f"Epoch {epoch} ({index + 1:3d}/{total_batch:3d})")
+            # pbar.set_description(f"Epoch {epoch} ({index + 1:3d}/{total_batch:3d})")
             if type(SNR_train) is not torch.Tensor:
                 # SNR_train = torch.tensor(SNR_train)
                 raise TypeError("Not Tensor!")
@@ -270,13 +277,11 @@ def train(X, Y, sys, SNR_train):
                 b_optimizer.step()
                 error_user += r_error
             error_epoch = error_epoch + error_user / Num_User
-        # R_error.append((error_user / Num_User).data.storage().tolist())
-        # R_error.append((error_user / Num_User).detach().cpu().numpy().tolist())
         R_error.append((error_user / Num_User).detach())
 
         # ---------------------------------------------------------------------------------------------------------
 
-        if epoch % 30 == 0:
+        if epoch % print_interval == 0:
             print(
                 f"\r \nEpoch: {epoch}, Loss: {(error_user / Num_User).data}, "
                 f"LR: {b_optimizer.param_groups[0]['lr']:0.5f}"
@@ -290,7 +295,7 @@ def train(X, Y, sys, SNR_train):
             ber = torch.zeros(SNR_vali.shape)
             for i_snr in range(SNR_vali.shape[0]):
                 SNR = 10 ** (SNR_vali[i_snr] / 10) / sys.Rece_Ampli ** 2
-                _, X_test, Y_test = ae.generate_transmit_data(
+                X_test, Y_test = ae.generate_transmit_data(
                     sys.M, Num_User, sys.Num_vali, seed=random.randint(0, 1000)
                 )
                 Y_pred, y_receiver = test(X_test, sys, SNR, B, Ris, R)
@@ -309,7 +314,7 @@ def train(X, Y, sys, SNR_train):
             ))
             # SNR_train = ((2.5 * 1e-6) / power / (10 ** 0.5 * 1e-7))
             SNR_train = 10 ** 0.5 * 2.5 / power.data
-            print(f"SNR_train changed to {SNR_train} or "
+            print(f"\rSNR_train changed to {SNR_train} or "
                   f"{10 * torch.log10(SNR_train * ((10 ** (-3.5)) ** 2))} db?"
                   )
     print("")
