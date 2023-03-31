@@ -1,4 +1,5 @@
 import random
+from pathlib import Path
 
 import numpy as np
 import scipy.io as sio
@@ -374,6 +375,7 @@ def test(X, sys, SNR_test: torch.Tensor, B=None, Ris=None, R=None):
 
 def Save_Model(B, Ris, R, J):
     print("Saving models..")
+    Path("model").mkdir(exist_ok=True)
     torch.save(B.state_dict(), "model/b1.pkl")
     torch.save(Ris.state_dict(), "model/ris1.pkl")
     for i in range(J):
