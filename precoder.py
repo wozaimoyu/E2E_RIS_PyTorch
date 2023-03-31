@@ -228,95 +228,101 @@ def train(X, Y, sys: sys_model.Para, SNR_train: torch.Tensor):
         print("no regularization")
 
     R_error, Acc, best_ber = [], [], 1
-    pbar = tqdm(total=sys.Epoch_train)  # progress bar
-    for epoch in range(sys.Epoch_train):
-        error_epoch = 0
-        pbar.set_description(f"E {epoch}")
-        for index in range(total_batch):
-            pbar.update(1 / total_batch)
-            # pbar.set_description(f"Epoch {epoch} ({index + 1:3d}/{total_batch:3d})")
-            if type(SNR_train) is not torch.Tensor:
-                # SNR_train = torch.tensor(SNR_train)
-                raise TypeError("Not Tensor!")
-            noise_train = torch.randn(
-                sys.Batch_Size,
-                sys.Num_User_Antenna * 2
-            ) / torch.sqrt(SNR_train) / np.sqrt(2)
+    with tqdm(
+            total=sys.Epoch_train, unit='epoch',
+            bar_format="{l_bar}{bar}| {n:.2f}/{total_fmt} [{elapsed}<{remaining}, {rate_noinv_fmt}{postfix}]"
+            # "ETA: {eta}"
+    ) as pbar:  # progress bar
+        for epoch in range(sys.Epoch_train):
+            error_epoch = 0
+            pbar.set_description(f"Epoch {epoch}")
+            for index in range(total_batch):
+                if type(SNR_train) is not torch.Tensor:
+                    # SNR_train = torch.tensor(SNR_train)
+                    raise TypeError("Not Tensor!")
+                noise_train = torch.randn(
+                    sys.Batch_Size,
+                    sys.Num_User_Antenna * 2
+                ) / torch.sqrt(SNR_train) / np.sqrt(2)
 
-            idx = np.random.randint(X.shape[0], size=sys.Batch_Size)
+                idx = np.random.randint(X.shape[0], size=sys.Batch_Size)
 
-            B.zero_grad()
-            Ris.zero_grad()
-            for i in range(Num_User):
-                R[i].zero_grad()
+                B.zero_grad()
+                Ris.zero_grad()
+                for i in range(Num_User):
+                    R[i].zero_grad()
 
-            x_data = B(ae.onehot2bit(X_train[idx, :]))
-            target = ae.onehot2bit(Y_train[idx, :])
-            norm = torch.empty(1, sys.Batch_Size)
-            norm[0, :] = torch.norm(x_data, 2, 1)
+                x_data = B(ae.onehot2bit(X_train[idx, :]))
+                target = ae.onehot2bit(Y_train[idx, :])
+                norm = torch.empty(1, sys.Batch_Size)
+                norm[0, :] = torch.norm(x_data, 2, 1)
 
-            x_data = x_data / torch.t(norm)
-            ri_data = Channel(x_data, sys.Channel_BS2RIS)
-            ro_data = Ris(ri_data)
-            y_data = Channel(
-                ro_data, sys.Channel_RIS2User
-            ) + Channel(
-                x_data, sys.Channel_BS2User
-            ) + noise_train
+                x_data = x_data / torch.t(norm)
+                ri_data = Channel(x_data, sys.Channel_BS2RIS)
+                ro_data = Ris(ri_data)
+                y_data = Channel(
+                    ro_data, sys.Channel_RIS2User
+                ) + Channel(
+                    x_data, sys.Channel_BS2User
+                ) + noise_train
 
-            error_user = 0
-            for i in range(Num_User):
-                r_error = criterion(
-                    R[i](y_data),
-                    target[:, i * k:(i + 1) * k]
+                error_user = 0
+                for i in range(Num_User):
+                    r_error = criterion(
+                        R[i](y_data),
+                        target[:, i * k:(i + 1) * k]
+                    )
+                    r_error.backward(retain_graph=True)
+
+                    r_optimizer[i].step()
+                    ris_optimizer.step()
+                    b_optimizer.step()
+                    error_user += r_error
+                error_epoch = error_epoch + error_user / Num_User
+
+                pbar.update(1 / total_batch)
+                # pbar.set_description(f"Epoch {epoch} ({index + 1:3d}/{total_batch:3d})")
+            R_error.append((error_user / Num_User).detach())
+
+            # ---------------------------------------------------------------------------------------------------------
+
+            if epoch % print_interval == 0:
+                print(
+                    f"\r \nEpoch: {epoch}, Loss: {(error_user / Num_User).data}, "
+                    f"LR: {b_optimizer.param_groups[0]['lr']:0.5f}"
                 )
-                r_error.backward(retain_graph=True)
+                for i in range(Num_User):
+                    r_optimizer[i].param_groups[0]['lr'] /= lr_factor
+                ris_optimizer.param_groups[0]['lr'] /= lr_factor
+                b_optimizer.param_groups[0]['lr'] /= lr_factor
 
-                r_optimizer[i].step()
-                ris_optimizer.step()
-                b_optimizer.step()
-                error_user += r_error
-            error_epoch = error_epoch + error_user / Num_User
-        R_error.append((error_user / Num_User).detach())
-
-        # ---------------------------------------------------------------------------------------------------------
-
-        if epoch % print_interval == 0:
-            print(
-                f"\r \nEpoch: {epoch}, Loss: {(error_user / Num_User).data}, "
-                f"LR: {b_optimizer.param_groups[0]['lr']:0.5f}"
-            )
-            for i in range(Num_User):
-                r_optimizer[i].param_groups[0]['lr'] /= lr_factor
-            ris_optimizer.param_groups[0]['lr'] /= lr_factor
-            b_optimizer.param_groups[0]['lr'] /= lr_factor
-
-            SNR_vali = torch.tensor([-5, 0, 5, 10, 15, 20])
-            ber = torch.zeros(SNR_vali.shape)
-            for i_snr in range(SNR_vali.shape[0]):
-                SNR = 10 ** (SNR_vali[i_snr] / 10) / sys.Rece_Ampli ** 2
-                X_test, Y_test = ae.generate_transmit_data(
-                    sys.M, Num_User, sys.Num_vali, seed=random.randint(0, 1000)
-                )
-                Y_pred, y_receiver = test(X_test, sys, SNR, B, Ris, R)
-                ber[i_snr] = ae.BER(X_test, sys, Y_pred, sys.Num_vali)
-                # print(f'The BER at SNR={SNR_vali[i_snr]} is {ber[i_snr]:0.8f}')
-            # print('-----------------------------------------------------------------------------')
-            print(f'SNR | {"| ".join([f"{x:^10d}" for x in SNR_vali])}|')
-            print(f'BER | {"| ".join([f"{x:0.8f}" for x in ber])}|')
-            # print('-----------------------------------------------------------------------------')
-            Acc.append(ber[3])  # BER at 10dB
-            if ber[1] < best_ber:  # BER at 0dB
-                Save_Model(B, Ris, R, Num_User)
-                best_ber = ber[1]  # BER at 0dB
-            power = torch.mean(torch.sum(
-                (Channel(ro_data, sys.Channel_RIS2User) + Channel(x_data, sys.Channel_BS2User)) ** 2, 1
-            ))
-            # SNR_train = ((2.5 * 1e-6) / power / (10 ** 0.5 * 1e-7))
-            SNR_train = 10 ** 0.5 * 2.5 / power.data
-            print(f"\rSNR_train changed to {SNR_train} or "
-                  f"{10 * torch.log10(SNR_train * ((10 ** (-3.5)) ** 2))} db?"
-                  )
+                SNR_vali = torch.tensor([-5, 0, 5, 10, 15, 20])
+                ber = torch.zeros(SNR_vali.shape)
+                for i_snr in range(SNR_vali.shape[0]):
+                    SNR = 10 ** (SNR_vali[i_snr] / 10) / sys.Rece_Ampli ** 2
+                    X_test, Y_test = ae.generate_transmit_data(
+                        sys.M, Num_User, sys.Num_vali, seed=random.randint(0, 1000)
+                    )
+                    Y_pred, y_receiver = test(X_test, sys, SNR, B, Ris, R)
+                    ber[i_snr] = ae.BER(X_test, sys, Y_pred, sys.Num_vali)
+                    # print(f'The BER at SNR={SNR_vali[i_snr]} is {ber[i_snr]:0.8f}')
+                # print('-----------------------------------------------------------------------------')
+                print(f'SNR | {"| ".join([f"{x:^10d}" for x in SNR_vali])}|')
+                print(f'BER | {"| ".join([f"{x:0.8f}" for x in ber])}|')
+                # print('-----------------------------------------------------------------------------')
+                Acc.append(ber[3])  # BER at 10dB
+                if ber[1] < best_ber:  # BER at 0dB
+                    Save_Model(B, Ris, R, Num_User)
+                    best_ber = ber[1]  # BER at 0dB
+                power = torch.mean(torch.sum(
+                    (Channel(ro_data, sys.Channel_RIS2User) + Channel(x_data, sys.Channel_BS2User)) ** 2, 1
+                ))
+                # SNR_train = ((2.5 * 1e-6) / power / (10 ** 0.5 * 1e-7))
+                SNR_train = 10 ** 0.5 * 2.5 / power.data
+                print(f"\rSNR_train changed to {SNR_train} or "
+                      f"{10 * torch.log10(SNR_train * ((10 ** (-3.5)) ** 2))} db?"
+                      )
+            # pbar.update(1)
     print("")
     return R_error
 
@@ -384,19 +390,19 @@ def test(X, sys, SNR_test: torch.Tensor, B=None, Ris=None, R=None):
 
 def Save_Model(B, Ris, R, J):
     print("Saving models..")
-    Path("model").mkdir(exist_ok=True)
-    torch.save(B.state_dict(), "model/b1.pkl")
-    torch.save(Ris.state_dict(), "model/ris1.pkl")
+    Path("outputs/model").mkdir(parents=True, exist_ok=True)
+    torch.save(B.state_dict(), "outputs/model/b1.pkl")
+    torch.save(Ris.state_dict(), "outputs/model/ris1.pkl")
     for i in range(J):
-        torch.save(R[i].state_dict(), f"model/r1_{i}.pkl")
+        torch.save(R[i].state_dict(), f"outputs/model/r1_{i}.pkl")
 
 
 def Load_Model(B, Ris, R, J):
     # todo: test parameter removed,,, is it needed?
-    B.load_state_dict(torch.load('model/b1.pkl'))
-    Ris.load_state_dict(torch.load('model/ris1.pkl'))
+    B.load_state_dict(torch.load('outputs/model/b1.pkl'))
+    Ris.load_state_dict(torch.load('outputs/model/ris1.pkl'))
     for i in range(J):
-        R[i].load_state_dict(torch.load(f'model/r1_{i}.pkl'))
+        R[i].load_state_dict(torch.load(f'outputs/model/r1_{i}.pkl'))
     return B, Ris, R
 
 

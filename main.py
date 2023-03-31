@@ -1,5 +1,7 @@
 import random
+import shutil
 import time
+from pathlib import Path
 
 import torch
 # import numpy as np
@@ -11,6 +13,13 @@ import precoder
 from channel_generator import rayleigh_chan
 from plot_test import ber_plot
 from sys_model import Para
+
+try:
+    from google.colab import files
+
+    COLAB = True
+except ModuleNotFoundError:
+    COLAB = False
 
 use_cuda_if_available = True
 device = "cuda" if torch.cuda.is_available() and use_cuda_if_available else "cpu"
@@ -51,7 +60,8 @@ Ber = torch.zeros([Sample, User_dis.shape[0], SNR_dB.shape[0]])
 # todo: figure out mean_rate and max_rate
 mean_rate = torch.zeros([Sample, User_dis.shape[0]])
 max_rate = torch.zeros([Sample, User_dis.shape[0]])
-
+Path(f'outputs/tmp').mkdir(parents=True, exist_ok=True)
+sys = None
 for s in range(Sample):
     Channel_BS2RIS = ChaData_BS2RIS[s]
     Channel_RIS2User = ChaData_RIS2User[s]
@@ -88,6 +98,7 @@ for s in range(Sample):
 
         print("Calculating BER")
         for i_snr in range(SNR_dB.shape[0]):
+            print(f"\r{SNR_dB[i_snr]}", end="")
             SNR = 10 ** (SNR_dB[i_snr] / 10) / sys.Rece_Ampli ** 2
             X_test, Y_test = ae.generate_transmit_data(
                 M=sys.M, J=sys.Num_User, num=sys.Num_test,
@@ -96,7 +107,7 @@ for s in range(Sample):
             Y_pred, y_receiver = precoder.test(X_test, sys, SNR)
             ber[i_snr] = ae.BER(X_test, sys, Y_pred, sys.Num_test)
             # print(f'The BER at SNR={SNR_dB[i_snr]} is {ber[i_snr]:0.8f}')
-        print('-' * (5 + SNR_dB.shape[0] * 12))
+        print('\r' + '-' * (5 + SNR_dB.shape[0] * 12))
         print(f'SNR | {"| ".join([f"{x:^10d}" for x in SNR_dB])}|')
         print(f'BER | {"| ".join([f"{x:0.8f}" for x in ber])}|')
         print('-' * (5 + SNR_dB.shape[0] * 12))
@@ -104,10 +115,27 @@ for s in range(Sample):
         Ber[s, x, :] = ber
         ber_plot(
             Ber=Ber[:s + 1, :, :],
+            fname=Path(f"outputs/tmp/{time.strftime('%Y-%m-%d %H.%M.%S')}.png"),
             x1=User_dis,
             x2=SNR_dB
         )
-        sio.savemat(f'figure/E2E_Ber_{sys.Num_RIS_Element}_{s}.mat', mdict={'Ber': Ber.cpu().numpy()})
+        sio.savemat(f'outputs/tmp/E2E_Ber_{sys.Num_RIS_Element}_{s}.mat',
+                    mdict={'Ber': Ber[:s + 1, :, :].cpu().numpy()})
 
-    sio.savemat(f'figure/E2E_Ber_{sys.Num_RIS_Element}_{s}.mat', mdict={'Ber': Ber.cpu().numpy()})
-    print("Saved temp ber!")
+ber_plot(
+    Ber=Ber,
+    fname=Path(f"outputs/E2E_Ber_{sys.Num_RIS_Element}.png"),
+    x1=User_dis,
+    x2=SNR_dB
+)
+sio.savemat(f'outputs/E2E_Ber_{sys.Num_RIS_Element}.mat', mdict={'Ber': Ber.cpu().numpy()})
+print("Saved ber!")
+
+zip_name = f"outputs_{time.strftime('%Y-%m-%d %H.%M.%S')}"
+shutil.make_archive(
+    base_name=zip_name,  # zip file name
+    format="zip",
+    root_dir="outputs"  # folder to zip
+)
+if COLAB:
+    files.download(f"{zip_name}.zip")

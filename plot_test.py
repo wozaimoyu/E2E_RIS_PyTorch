@@ -1,5 +1,6 @@
 import ctypes
 import time
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,7 +21,7 @@ BER_128_e2e = np.mean(sio.loadmat(r"figure/E2E_Ber_128.mat")['Ber'], axis=0)
 BER_256_e2e = np.mean(sio.loadmat(r"figure/E2E_Ber_256.mat")['Ber'], axis=0)
 
 
-def ber_plot(Ber: torch.Tensor, x1=None, x2=None):
+def ber_plot(Ber: torch.Tensor, fname: Path, x1=None, x2=None):
     fig, axs = plt.subplots(2, 1, figsize=(7, 10))
 
     # Compute the mean along the first axis
@@ -60,9 +61,8 @@ def ber_plot(Ber: torch.Tensor, x1=None, x2=None):
     axs[1].set_ylabel('BER')
     axs[1].legend()
     plt.tight_layout()
-    # plt.pause(0.001)
-    # plt.show()
-    plt.savefig("test_fig.png", bbox_inches='tight', dpi=200, )
+    fname.parent.mkdir(exist_ok=True, parents=True)
+    plt.savefig(fname, bbox_inches='tight', dpi=200, )
     plt.close()
 
 
