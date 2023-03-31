@@ -13,8 +13,11 @@ from plot_test import ber_plot
 
 use_cuda_if_available = True
 device = "cuda" if torch.cuda.is_available() and use_cuda_if_available else "cpu"
-torch.set_default_device(device)
 print(f"Using pytorch {torch.__version__} on {device}")
+try:
+    torch.set_default_device(device)
+except AttributeError:
+    print(f"Unable to set default device to {device}")
 
 
 class Para:
