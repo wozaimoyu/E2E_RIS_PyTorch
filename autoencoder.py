@@ -8,18 +8,14 @@ def onehot2bit(X):
     :param X: one-hot encoded data
     :return: bit: bit data
     """
-    # BIT_16 = np.array([[0, 0, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0], [0, 0, 1, 1],
-    #                    [0, 1, 0, 0], [0, 1, 0, 1], [0, 1, 1, 0], [0, 1, 1, 1],
-    #                    [1, 0, 0, 0], [1, 0, 0, 1], [1, 0, 1, 0], [1, 0, 1, 1],
-    #                    [1, 1, 0, 0], [1, 1, 0, 1], [1, 1, 1, 0], [1, 1, 1, 1]])
-    # bit = np.matmul(X, BIT_16)
-
     BIT_16 = torch.tensor([[0, 0, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0], [0, 0, 1, 1],
                            [0, 1, 0, 0], [0, 1, 0, 1], [0, 1, 1, 0], [0, 1, 1, 1],
                            [1, 0, 0, 0], [1, 0, 0, 1], [1, 0, 1, 0], [1, 0, 1, 1],
                            [1, 1, 0, 0], [1, 1, 0, 1], [1, 1, 1, 0], [1, 1, 1, 1]], dtype=torch.float)
 
-    X = torch.tensor(X, dtype=torch.float)
+    if type(X) is not torch.Tensor:
+        print("\t\tConverting to tensor..")
+        X = torch.tensor(X, dtype=torch.float)
     bit = torch.matmul(X, BIT_16)
 
     return bit
@@ -40,21 +36,14 @@ def generate_transmit_data(M, J, num, seed=0):
         X (ndarray): an array of one-hot-encoded transmitted symbols.
         Y (ndarray): an array of one-hot-encoded received symbols, which is the same as X.
     """
-    # print('Generate transmit data: M = %d, seed = %d' %(M, seed))
-    # np.random.seed(seed)
-    # symbol_index = np.random.randint(M, size=num * J)
-    # X = np.zeros((num * J, M), dtype='float32')
-    # # Y = np.zeros((num * J, M), dtype='float32')
-    # for i in range(num * J):
-    #     X[i, symbol_index[i]] = 1
-    # X = np.reshape(X, [num, M * J])
-    # Y = X
-    # return symbol_index, X, Y
+    # print(f'\tGenerating transmit data: M = {M}, seed = {seed}')
     torch.manual_seed(seed)
     symbol_index = torch.randint(M, size=(num * J,))
     X = torch.zeros((num * J, M), dtype=torch.float32)
-    for i in range(num * J):
-        X[i, symbol_index[i]] = 1
+    # Y = np.zeros((num * J, M), dtype='float32')
+    # for i in range(num * J):
+    #     X[i, symbol_index[i]] = 1
+    X[torch.arange(num * J), symbol_index] = 1
     X = X.reshape(num, M * J)
     Y = X
     return symbol_index, X, Y
@@ -98,6 +87,7 @@ def generate_rate_data(M, J):
         X: one-hot encoded data
         Y: one-hot encoded data (same as X)
     """
+    print(f'\tGenerating rate data: M = {M}')
     symbol_index = torch.arange(M)
     X = torch.tile(torch.eye(M), (1, J))
     Y = X
@@ -113,6 +103,7 @@ def calcul_rate(y, Rece_Ampli, Num_Antenna):
     :return: mean_rate: mean channel capacity
         max_rate: maximum channel capacity
     """
+    print("\tCalculating rate..")
     z = y[:, 0:Num_Antenna] + 1j * y[:, Num_Antenna:2 * Num_Antenna]
     zt = y[:, 0:Num_Antenna] - 1j * y[:, Num_Antenna:2 * Num_Antenna]
     # rate = np.log2(1 + np.matmul(z, zt.T) / Rece_Ampli ** 2)

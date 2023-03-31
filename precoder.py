@@ -8,6 +8,13 @@ import torch.nn.functional as F
 
 import autoencoder as ae
 
+t_learning_rate = 0.001
+r_learning_rate = 0.001
+ris_learning_rate = 0.001
+print_interval = 30
+g_weight_gain = 0.1
+g_bias_gain = 0.1
+
 optim_betas = (0.9, 0.999)
 weight_gain = 1
 bias_gain = 0.1
@@ -35,20 +42,11 @@ class BS(nn.Module):
 
         # Initialize weights and biases using Xavier initialization and constant initialization, respectively
         nn.init.xavier_normal_(self.map1.weight, weight_gain)
-        nn.init.constant(self.map1.bias, bias_gain)
+        nn.init.constant_(self.map1.bias, bias_gain)
         nn.init.xavier_normal_(self.map2.weight, weight_gain)
-        nn.init.constant(self.map2.bias, bias_gain)
+        nn.init.constant_(self.map2.bias, bias_gain)
 
     def forward(self, x):
-        """
-        Define forward pass of the neural network
-
-        Args:
-            x (tensor): Input tensor
-
-        Returns:
-            tensor: Output tensor
-        """
         return self.map3(F.relu(self.map2(F.relu(self.map1(x)))))
 
 
@@ -127,6 +125,10 @@ class Receiver(nn.Module):
         return torch.sigmoid(self.bn2(self.map2(self.bn1(F.relu(self.map1(x))))))
 
 
+# def get_generator_input_sampler():
+#     return lambda m, n: torch.rand(m, n)
+
+
 def ini_weights(sys):
     B = BS(
         input_size=sys.k * sys.Num_User,
@@ -157,19 +159,7 @@ def Channel(t_data, channel):
     the channel, concatenating them to form two new tensors "h1" and "h2", concatenating those tensors along a new
     axis, performing matrix multiplication between the resulting channel tensor and the transposed data tensor,
     and finally transposing the output back to its original shape.
-
-    :param t_data:
-    :param channel:
-
-    :return:
     """
-    # cat = np.concatenate
-    # t_data = torch.transpose(t_data, 1, 0)
-    # hr, hi = channel.real, channel.imag
-    # h1, h2 = cat([hr, -hi], 1), cat([hi, hr], 1)
-    # channel = torch.from_numpy(cat([h1, h2], 0)).float().to(device)
-    # r_data = torch.matmul(channel, t_data)
-    # return torch.transpose(r_data, 1, 0)
     cat = torch.cat
     t_data = torch.transpose(t_data, 1, 0)
     hr, hi = channel.real, channel.imag
@@ -180,10 +170,15 @@ def Channel(t_data, channel):
 
 
 criterion = nn.BCELoss()
-torch.autograd.set_detect_anomaly(True)
+
+
+# are these used?
+# gi_sampler = get_generator_input_sampler()
+# c1 = nn.MSELoss()
 
 
 def train(X, Y, sys, SNR_train):
+    print("Training Started..")
     X_train = X
     Y_train = Y
     k = sys.k
@@ -197,44 +192,44 @@ def train(X, Y, sys, SNR_train):
 
     b_optimizer = optim.Adam(
         params=B.parameters(),
-        lr=0.001,
+        lr=t_learning_rate,
         betas=optim_betas
     )
     ris_optimizer = optim.Adam(
         params=Ris.parameters(),
-        lr=0.001,
+        lr=ris_learning_rate,
         betas=optim_betas
     )
     r_optimizer = []
     for i in range(Num_User):
         r_optimizer.append(optim.Adam(
             params=R[i].parameters(),
-            lr=0.001,
+            lr=r_learning_rate,
             betas=optim_betas
         ))
 
     if weight_decay > 0:
-        # b_reg = Regularization(B, weight_decay, p=2) # todo: Regularization??
-        print("Regularization step?")
+        b_reg = Regularization(B, weight_decay, p=2)
+        ris_reg = Regularization(Ris, weight_decay, p=2)
+        r_reg = []
+        for i in range(Num_User):
+            r_reg.append(Regularization(R[i], weight_decay, p=2))
     else:
-        print("No Regularization")
+        print("no regularization")
 
     R_error, Acc, best_ber = [], [], 1
     for epoch in range(sys.Epoch_train):
         error_epoch = 0
         for index in range(total_batch):
-            # noise_train = torch.from_numpy(
-            #     np.random.rand(
-            #         sys.Batch_Size,
-            #         sys.Num_User_Antenna * 2
-            #     ) * np.sqrt(1 / SNR_train) / np.sqrt(2)
-            # ).float().to(device)
+            if index % 1 == 0:
+                print(f"\r\t\tEpoch: {epoch}/{sys.Epoch_train}, Batch: {index}/{total_batch}", end="")
+            if type(SNR_train) is not torch.Tensor:
+                # SNR_train = torch.tensor(SNR_train)
+                raise TypeError("Not Tensor!")
             noise_train = torch.randn(
                 sys.Batch_Size,
                 sys.Num_User_Antenna * 2
-            ) / torch.sqrt(
-                torch.tensor(SNR_train)
-            ) / torch.sqrt(torch.tensor(2.0))
+            ) / torch.sqrt(SNR_train) / np.sqrt(2)
 
             idx = np.random.randint(X.shape[0], size=sys.Batch_Size)
 
@@ -247,11 +242,6 @@ def train(X, Y, sys, SNR_train):
             target = ae.onehot2bit(Y_train[idx, :])
             norm = torch.empty(1, sys.Batch_Size)
             norm[0, :] = torch.norm(x_data, 2, 1)
-
-            # noise_train.to(device)
-            # x_data.to(device)
-            # norm = norm.to(device)
-            # target.to(device)
 
             x_data = x_data / torch.t(norm)
             ri_data = Channel(x_data, sys.Channel_BS2RIS)
@@ -274,14 +264,16 @@ def train(X, Y, sys, SNR_train):
                 ris_optimizer.step()
                 b_optimizer.step()
                 error_user += r_error
-            error_epoch += error_user / Num_User
-        R_error.append((error_user / Num_User).data.storage().tolist())
+            error_epoch = error_epoch + error_user / Num_User
+        # R_error.append((error_user / Num_User).data.storage().tolist())
+        # R_error.append((error_user / Num_User).detach().cpu().numpy().tolist())
+        R_error.append((error_user / Num_User).detach())
 
         # ---------------------------------------------------------------------------------------------------------
 
         if epoch % 30 == 0:
             print(
-                f"Epoch: {epoch}, Loss: {(error_user / Num_User).data.storage().tolist()}, "
+                f"\r \nEpoch: {epoch}, Loss: {(error_user / Num_User).data}, "
                 f"LR: {b_optimizer.param_groups[0]['lr']:0.5f}"
             )
             for i in range(Num_User):
@@ -289,28 +281,37 @@ def train(X, Y, sys, SNR_train):
             ris_optimizer.param_groups[0]['lr'] /= lr_factor
             b_optimizer.param_groups[0]['lr'] /= lr_factor
 
-            SNR_vali = np.array([-5, 0, 5, 10, 15, 20])
+            SNR_vali = torch.tensor([-5, 0, 5, 10, 15, 20])
             ber = torch.zeros(SNR_vali.shape)
             for i_snr in range(SNR_vali.shape[0]):
                 SNR = 10 ** (SNR_vali[i_snr] / 10) / sys.Rece_Ampli ** 2
-                sym_index_test, X_test, Y_test = ae.generate_transmit_data(
+                _, X_test, Y_test = ae.generate_transmit_data(
                     sys.M, Num_User, sys.Num_vali, seed=random.randint(0, 1000)
                 )
                 Y_pred, y_receiver = test(X_test, sys, SNR, B, Ris, R)
                 ber[i_snr] = ae.BER(X_test, sys, Y_pred, sys.Num_vali)
-                print(f'The BER at SNR={SNR_vali[i_snr]} is {ber[i_snr]:0.8f}')
-            Acc.append(ber[3])
-            if ber[1] < best_ber:
+                # print(f'The BER at SNR={SNR_vali[i_snr]} is {ber[i_snr]:0.8f}')
+            # print('-----------------------------------------------------------------------------')
+            print(f'SNR | {"| ".join([f"{x:^10d}" for x in SNR_vali])}|')
+            print(f'BER | {"| ".join([f"{x:0.8f}" for x in ber])}|')
+            # print('-----------------------------------------------------------------------------')
+            Acc.append(ber[3])  # BER at 10dB
+            if ber[1] < best_ber:  # BER at 0dB
                 Save_Model(B, Ris, R, Num_User)
-                best_ber = ber[1]
+                best_ber = ber[1]  # BER at 0dB
             power = torch.mean(torch.sum(
                 (Channel(ro_data, sys.Channel_RIS2User) + Channel(x_data, sys.Channel_BS2User)) ** 2, 1
             ))
-            SNR_train = ((2.5 * 1e-6) / power / (10 ** 0.5 * 1e-7)).detach().cpu().numpy()
+            # SNR_train = ((2.5 * 1e-6) / power / (10 ** 0.5 * 1e-7))
+            SNR_train = 10 ** 0.5 * 2.5 / power.data
+            print(f"SNR_train changed to {SNR_train} or "
+                  f"{10 * torch.log10(SNR_train * ((10 ** (-3.5)) ** 2))} db?"
+                  )
+    print("")
     return R_error
 
 
-def test(X, sys, SNR_test, B=None, Ris=None, R=None):
+def test(X, sys, SNR_test: torch.Tensor, B=None, Ris=None, R=None):
     """
     Simulates the transmission of a given signal over a wireless communication system and returns the predicted received signal and the actual received signal.
 
@@ -337,19 +338,17 @@ def test(X, sys, SNR_test, B=None, Ris=None, R=None):
 
     X_test = X
     num_test = X_test.shape[0]
-    # noise_test = torch.from_numpy(
-    #     np.random.randn(
-    #         num_test, sys.Num_User_Antenna * 2
-    #     ) * np.sqrt(1 / (2 * SNR_test))
-    # ).float().to(device)
-    noise_test = torch.randn(num_test, sys.Num_User_Antenna * 2).float() * torch.sqrt(torch.tensor(1 / (2 * SNR_test)))
+    if type(SNR_test) is not torch.Tensor:
+        raise TypeError
+    noise_test = torch.randn(num_test, sys.Num_User_Antenna * 2) * torch.sqrt(1 / (2 * SNR_test))
 
     x_data = B(ae.onehot2bit(X_test))
     norm = torch.empty(1, num_test)
     norm[0, :] = torch.norm(x_data, 2, 1)
     x_data = x_data / torch.t(norm)
 
-    sio.savemat('x_data_' + str(sys.Num_RIS_Element) + '.mat', mdict={'x_data': x_data.cpu().detach().numpy()})
+    # print("\tSaving x_data")
+    # sio.savemat(f'x_data_{sys.Num_RIS_Element}.mat', mdict={'x_data': x_data.cpu().detach().numpy()})
 
     ri_data = Channel(x_data, sys.Channel_BS2RIS)
     ro_data = Ris(ri_data)
@@ -374,6 +373,7 @@ def test(X, sys, SNR_test, B=None, Ris=None, R=None):
 
 
 def Save_Model(B, Ris, R, J):
+    print("Saving models..")
     torch.save(B.state_dict(), "model/b1.pkl")
     torch.save(Ris.state_dict(), "model/ris1.pkl")
     for i in range(J):
@@ -381,8 +381,58 @@ def Save_Model(B, Ris, R, J):
 
 
 def Load_Model(B, Ris, R, J):
+    # todo: test parameter removed,,, is it needed?
     B.load_state_dict(torch.load('model/b1.pkl'))
     Ris.load_state_dict(torch.load('model/ris1.pkl'))
     for i in range(J):
         R[i].load_state_dict(torch.load(f'model/r1_{i}.pkl'))
     return B, Ris, R
+
+
+class Regularization(torch.nn.Module):
+    def __init__(self, model, weight_decay, p=2):
+        super(Regularization, self).__init__()
+        if weight_decay <= 0:
+            print("param weight_decay can not <=0")
+            exit(0)
+        self.model = model
+        self.weight_decay = weight_decay
+        self.p = p
+        self.weight_list = self.get_weight(model)
+        self.weight_info(self.weight_list)
+
+    def to(self, device):
+        self.device = device
+        super().to(device)
+        return self
+
+    def forward(self, model):
+        self.weight_list = self.get_weight(model)  # 获得最新的权重
+        reg_loss = self.regularization_loss(self.weight_list, self.weight_decay, p=self.p)
+        return reg_loss
+
+    @staticmethod
+    def get_weight(model):
+        weight_list = []
+        for name, param in model.named_parameters():
+            if 'weight' in name:
+                weight = (name, param)
+                weight_list.append(weight)
+        return weight_list
+
+    @staticmethod
+    def regularization_loss(weight_list, weight_decay, p=2):
+        reg_loss = 0
+        for name, w in weight_list:
+            l2_reg = torch.norm(w, p=p)
+            reg_loss = reg_loss + l2_reg
+
+        reg_loss = weight_decay * reg_loss
+        return reg_loss
+
+    def weight_info(self, weight_list):
+        '''
+        打印权重列表信息
+        :param weight_list:
+        :return:
+        '''
