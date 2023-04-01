@@ -1,12 +1,16 @@
 import numpy as np
 import torch
 
+from logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 def rayleigh_chan(Ta: int, Ra: int, L: int):
     """
     Generates a Rayleigh channel of size (LxRaxTa)
     """
-    print(f"Generating a ({L}x{Ra}x{Ta}) Rayleigh Channel Distribution")
+    logger.debug(f"Generating a ({L}x{Ra}x{Ta}) Rayleigh Channel Distribution")
     rand = torch.randn
     H = torch.empty((L, Ra, Ta), dtype=torch.complex128)
     r2 = np.sqrt(2)
@@ -33,6 +37,7 @@ def nakagami_chan(Ta: int, Ra: int, L: int, m: float = 1 / 2) -> torch.Tensor:
     """
     Generates a Nakagami-m channel of size (LxRaxTa)
     """
+    logger.debug(f"Generating a ({L}x{Ra}x{Ta}) Nakagami (m={m}) Channel Distribution")
     z = np.random.gamma(shape=m, scale=1 / m, size=(L, Ra, Ta))
     x = np.sqrt(z)
     # Generate random phases
@@ -46,6 +51,7 @@ def rician_chan(Ta: int, Ra: int, L: int, K: float = 3) -> torch.Tensor:
     """
     Generated a Rician-K channel distribution of size (LxRaxTa)
     """
+    logger.debug(f"Generating a ({L}x{Ra}x{Ta}) Rician (K={K}) Channel Distribution")
     # Generate complex-valued channel coefficients
     H = np.sqrt(0.5 * (K / (K + 1))) * np.random.randn(L, Ra, Ta) \
         + np.sqrt(0.5 / (K + 1)) * np.random.randn(L, Ra, Ta) * 1j
@@ -53,7 +59,6 @@ def rician_chan(Ta: int, Ra: int, L: int, K: float = 3) -> torch.Tensor:
 
 
 if __name__ == "__main__":
-    print("Channel distribution generator")
+    logger.info("Channel distribution generator")
     t = nakagami_chan(2, 3, 4)
     c = torch.tensor(rician_chan(2, 3, 4))
-    print(t)

@@ -1,3 +1,4 @@
+import math
 import random
 import shutil
 import time
@@ -11,6 +12,7 @@ import scipy.io as sio
 import autoencoder as ae
 import precoder
 import channel_generator as cg
+from logging_config import get_logger
 from plot_test import ber_plot
 from sys_model import Para
 
@@ -21,13 +23,16 @@ try:
 except ModuleNotFoundError:
     COLAB = False
 
+logger = get_logger(__name__)
+
 use_cuda_if_available = True
 device = "cuda" if torch.cuda.is_available() and use_cuda_if_available else "cpu"
-print(f"Using pytorch {torch.__version__} on {device}")
 try:
     torch.set_default_device(device)
 except AttributeError:
-    print(f"Unable to set default device to {device}")
+    logger.debug(f"Unable to set default device to {device}")
+    device = "cpu"
+logger.info(f"Using pytorch {torch.__version__} on {device}")
 
 # Generate Channel Data
 channel_fn = cg.nakagami_chan
@@ -43,15 +48,20 @@ ChaData_BS2RIS = channel_fn(Ta=8, Ra=1024, L=1000)
 # ChaData_RIS2User.dtype = 'complex128'
 # ChaData_BS2User.dtype = 'complex128'
 
-print('ChaData_BS2RIS:', ChaData_BS2RIS.shape)
-print('ChaData_RIS2User:', ChaData_RIS2User.shape)
-print('ChaData_BS2User:', ChaData_BS2User.shape)
+logger.info(
+    f'ChaData_BS2RIS: {tuple(ChaData_BS2RIS.shape)}'
+    f'ChaData_RIS2User: {tuple(ChaData_RIS2User.shape)}'
+    f'ChaData_BS2User: {tuple(ChaData_BS2User.shape)}\n'
+)
 
 SNR_dB = torch.arange(-5, 21, 1)  # Generate graph at these values
 User_dis = torch.arange(0, 101, 10)
 SNR_dB_train = torch.tensor([2, 1, 0, 0, -2, -5, -8, -6, 0, 2, 4])
 # SNR_dB_train = torch.tensor([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
 # SNR_dB_train = torch.tensor([2, 6, 7, 9, 10, 5, 0, 6, 13, 18, 20])
+
+logger.debug(f"User Distances: {User_dis.tolist()}")
+logger.debug(f"Training SNRs : {SNR_dB_train.tolist()}")
 
 # How many training would be done, the output curve is mean of all training
 Sample = 1
@@ -70,7 +80,7 @@ for s in range(Sample):
 
     for x in range(User_dis.shape[0]):
         sys = Para(User_dis[x], SNR_dB_train[x], Channel_BS2RIS, Channel_RIS2User, Channel_BS2User)
-        print(
+        logger.info(
             f'\n\nSample: {s}/{Sample - 1}, x: {x}/{User_dis.shape[0] - 1}, '
             f'position: {User_dis[x]}/{User_dis[-1]}, SNR {sys.SNR_train_db}'
         )
@@ -81,6 +91,7 @@ for s in range(Sample):
         )
 
         if x == 0:
+            logger.debug("Changing Model Data")
             sys.Epoch_train = 200
             sys.LR_Factor = 1.05
             sys.load_model = 0
@@ -88,7 +99,7 @@ for s in range(Sample):
         time_start = time.time()
         precoder.train(X_train, Y_train, sys, sys.SNR_train)
         time_end = time.time()
-        print(f'Time to train: {time_end - time_start}')
+        logger.info(f'Time to train: {time_end - time_start}')
 
         # _, X_rate, Y_rate = ae.generate_rate_data(sys.M, sys.Num_User)
         # Y_pred, y_rate = precoder.test(X_rate, sys, torch.tensor(torch.inf))
@@ -97,7 +108,9 @@ for s in range(Sample):
 
         ber = torch.zeros(SNR_dB.shape)
 
-        print("Calculating BER")
+        logger.info("Calculating BER")
+        B, Ris, R = precoder.ini_weights(sys)
+        B, Ris, R = precoder.Load_Model(B, Ris, R, sys.Num_User)
         for i_snr in range(SNR_dB.shape[0]):
             print(f"\r{SNR_dB[i_snr]}", end="")
             SNR = 10 ** (SNR_dB[i_snr] / 10) / sys.Rece_Ampli ** 2
@@ -105,13 +118,18 @@ for s in range(Sample):
                 M=sys.M, J=sys.Num_User, num=sys.Num_test,
                 seed=random.randint(0, 1000)
             )
-            Y_pred, y_receiver = precoder.test(X_test, sys, SNR)
+            Y_pred, y_receiver = precoder.test(X_test, sys, SNR, B, Ris, R)
             ber[i_snr] = ae.BER(X_test, sys, Y_pred, sys.Num_test)
             # print(f'The BER at SNR={SNR_dB[i_snr]} is {ber[i_snr]:0.8f}')
-        print('\r' + '-' * (5 + SNR_dB.shape[0] * 12))
-        print(f'SNR | {"| ".join([f"{x:^10d}" for x in SNR_dB])}|')
-        print(f'BER | {"| ".join([f"{x:0.8f}" for x in ber])}|')
-        print('-' * (5 + SNR_dB.shape[0] * 12))
+        print('\r', end="")
+        line = ""
+        print_divider = '-' * (5 + 6 * 12) + '\n'
+        line += print_divider
+        for i in range(math.ceil(len(SNR_dB) / 6)):
+            line += f'SNR | {"| ".join([f"{x:^10d}" for x in SNR_dB[i * 6:(i + 1) * 6]])}|\n'
+            line += f'BER | {"| ".join([f"{x:0.8f}" for x in ber[i * 6:(i + 1) * 6]])}|\n'
+            line += print_divider
+        logger.info(line)
 
         Ber[s, x, :] = ber
         ber_plot(
@@ -120,8 +138,10 @@ for s in range(Sample):
             x1=User_dis,
             x2=SNR_dB
         )
-        sio.savemat(f'outputs/tmp/E2E_Ber_{sys.Num_RIS_Element}_{s}.mat',
-                    mdict={'Ber': Ber[:s + 1, :, :].cpu().numpy()})
+        sio.savemat(
+            f'outputs/tmp/E2E_Ber_{sys.Num_RIS_Element}_{s}.mat',
+            mdict={'Ber': Ber[:s + 1, :, :].cpu().numpy()}
+        )
 
 ber_plot(
     Ber=Ber,

@@ -1,5 +1,9 @@
 import torch
 
+from logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 class Para:
     def __init__(
@@ -14,7 +18,7 @@ class Para:
         self.Num_test = max(self.Batch_Size, 100000)  # number of test samples
         self.Num_vali = max(self.Batch_Size, 10000)
         self.Epoch_train = 60
-        self.LR_Factor = 1.2  # learning rate factor
+        self.LR_Factor = 1.2  # learning rate factor, LR is divided by this after each 30 epoch
         self.load_model = 1  # whether to load pre-trained models or not
 
         # Set the positions of the BS, RIS, and user in the 2D plane
@@ -59,6 +63,7 @@ class Para:
         self.SNR_train = 10 ** (SNR_train / 10)  # convert the SNR from dB to a ratio of P_S to P_N (linear scale)
         # ensures that the received signal power is consistent across different SNR values during training.
         self.SNR_train = self.SNR_train / (self.Rece_Ampli ** 2)  # normalizing the received signal amplitude to 1
+        logger.info("System Model Created")
 
     @staticmethod
     def Distance_Matrix(A, B):
@@ -86,3 +91,23 @@ class Para:
     @property
     def SNR_train_db(self) -> torch.Tensor:
         return 10 * torch.log10(self.SNR_train * (self.Rece_Ampli ** 2))
+
+    def to_log(self):
+        logger.info(
+            "System Model:\n"
+            f"\tM: {self.M}, k: {self.k}, LR Factor: {self.LR_Factor}, Load Model: {bool(self.load_model)}\n"
+            f"\tEpoch: {self.Epoch_train}, Batch: {int(self.Num_train/self.Batch_Size)}, Batch Size: {self.Batch_Size}\n"
+            f"\tReceiver Ampli: {self.Rece_Ampli}, SNR Train: {self.SNR_train_db.data:.2f} dB ({self.SNR_train})\n"
+            f"\tSamples:\n"
+            f"\t\tTraining: {self.Num_train}, Testing: {self.Num_test}, Validation: {self.Num_vali}\n"
+            f"\tAntenna/Element:\n"
+            f"\t\tBS: {self.Num_BS_Antenna}, RIS: {self.Num_RIS_Element}, User: {self.Num_User_Antenna}\n"
+            f"\tPosition:\n"
+            f"\t\tBS: {self.Pos_BS.tolist()}\n"
+            f"\t\tRIS: {self.Pos_RIS.tolist()}\n"
+            f"\t\tUser: {self.Pos_User.tolist()}\n"
+            f"\tDistance:\n"
+            f"\t\tBS2RIS: {self.Dis_BS2RIS.squeeze().tolist()}\n"
+            f"\t\tBS2User: {self.Dis_BS2User.squeeze().tolist()}\n"
+            f"\t\tRIS2User: {self.Dis_RIS2User.squeeze().tolist()}\n"
+        )

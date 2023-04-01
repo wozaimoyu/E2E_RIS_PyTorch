@@ -1,6 +1,9 @@
 import numpy as np
 import torch
 
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 def onehot2bit(X):
     """
@@ -62,7 +65,7 @@ def generate_rate_data(M, J):
         X: one-hot encoded data
         Y: one-hot encoded data (same as X)
     """
-    print(f'\tGenerating rate data: M = {M}')
+    logger.info(f'\tGenerating rate data: M = {M}')
     symbol_index = torch.arange(M)
     X = torch.tile(torch.eye(M), (1, J))
     Y = X
@@ -78,7 +81,7 @@ def calcul_rate(y, Rece_Ampli, Num_Antenna):
     :return: mean_rate: mean channel capacity
         max_rate: maximum channel capacity
     """
-    print("\tCalculating rate..")
+    logger.info("\tCalculating rate..")
     z = y[:, 0:Num_Antenna] + 1j * y[:, Num_Antenna:2 * Num_Antenna]
     zt = y[:, 0:Num_Antenna] - 1j * y[:, Num_Antenna:2 * Num_Antenna]
     # rate = np.log2(1 + np.matmul(z, zt.T) / Rece_Ampli ** 2)

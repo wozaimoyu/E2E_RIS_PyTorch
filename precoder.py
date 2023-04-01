@@ -10,6 +10,9 @@ from tqdm.auto import tqdm
 
 import autoencoder as ae
 import sys_model
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 t_learning_rate = 0.001
 r_learning_rate = 0.001
@@ -174,22 +177,14 @@ criterion = nn.BCELoss()
 
 
 def train(X, Y, sys: sys_model.Para, SNR_train: torch.Tensor):
+    logger.info(f"Training Started..")
+    sys.to_log()
     X_train = X
     Y_train = Y
     k = sys.k
     Num_User = sys.Num_User
     lr_factor = sys.LR_Factor
     total_batch = int(X.shape[0] / sys.Batch_Size)  # num_total/batch_size
-    print(
-        f"Training Started..\n"
-        f"\tk: {sys.k}, M: {sys.M} Num User: {sys.Num_User}, LR Factor: {sys.LR_Factor}, SNR: {sys.SNR_train_db:.3f}\n"
-        f"\tBS: {sys.Pos_BS.tolist()}, RIS: {sys.Pos_RIS.tolist()}, User: {sys.Pos_User.tolist()}\n"
-        f"\tEpoch: {sys.Epoch_train}, Batch Size: {sys.Batch_Size}, Total Batch: {total_batch}\n"
-        f"\tBS Antenna: {sys.Num_BS_Antenna}, RIS Element: {sys.Num_RIS_Element}, User Antenna: {sys.Num_BS_Antenna}\n"
-        f"\tBS2RIS Dis: {sys.Dis_BS2RIS.squeeze().tolist()}\n"
-        f"\tBS2User Dis: {sys.Dis_BS2User.squeeze().tolist()}\n"
-        f"\tRIS2User Dis: {sys.Dis_RIS2User.squeeze().tolist()}\n"
-    )
 
     if total_batch <= 0:
         raise ValueError(f"Number of Batch can not be 0 or less")
@@ -218,14 +213,14 @@ def train(X, Y, sys: sys_model.Para, SNR_train: torch.Tensor):
 
     if weight_decay > 0:
         # todo: What is regularization?
-        print("Regularization skipped")
+        logger.info("Regularization skipped")
         # b_reg = Regularization(B, weight_decay, p=2)
         # ris_reg = Regularization(Ris, weight_decay, p=2)
         # r_reg = []
         # for i in range(Num_User):
         #     r_reg.append(Regularization(R[i], weight_decay, p=2))
     else:
-        print("no regularization")
+        logger.info("no regularization")
 
     R_error, Acc, best_ber = [], [], 1
     with tqdm(
@@ -287,10 +282,7 @@ def train(X, Y, sys: sys_model.Para, SNR_train: torch.Tensor):
             # ---------------------------------------------------------------------------------------------------------
 
             if epoch % print_interval == 0:
-                print(
-                    f"\r \nEpoch: {epoch}, Loss: {(error_user / Num_User).data}, "
-                    f"LR: {b_optimizer.param_groups[0]['lr']:0.5f}"
-                )
+                lr = b_optimizer.param_groups[0]['lr']
                 for i in range(Num_User):
                     r_optimizer[i].param_groups[0]['lr'] /= lr_factor
                 ris_optimizer.param_groups[0]['lr'] /= lr_factor
@@ -306,10 +298,6 @@ def train(X, Y, sys: sys_model.Para, SNR_train: torch.Tensor):
                     Y_pred, y_receiver = test(X_test, sys, SNR, B, Ris, R)
                     ber[i_snr] = ae.BER(X_test, sys, Y_pred, sys.Num_vali)
                     # print(f'The BER at SNR={SNR_vali[i_snr]} is {ber[i_snr]:0.8f}')
-                # print('-----------------------------------------------------------------------------')
-                print(f'SNR | {"| ".join([f"{x:^10d}" for x in SNR_vali])}|')
-                print(f'BER | {"| ".join([f"{x:0.8f}" for x in ber])}|')
-                # print('-----------------------------------------------------------------------------')
                 Acc.append(ber[3])  # BER at 10dB
                 if ber[1] < best_ber:  # BER at 0dB
                     Save_Model(B, Ris, R, Num_User)
@@ -319,9 +307,16 @@ def train(X, Y, sys: sys_model.Para, SNR_train: torch.Tensor):
                 ))
                 # SNR_train = ((2.5 * 1e-6) / power / (10 ** 0.5 * 1e-7))
                 SNR_train = 10 ** 0.5 * 2.5 / power.data
-                print(f"\rSNR_train changed to {SNR_train} or "
-                      f"{10 * torch.log10(SNR_train * ((10 ** (-3.5)) ** 2))} db?"
-                      )
+                SNR_train_db = 10 * torch.log10(SNR_train * (sys.Rece_Ampli ** 2))
+                print("\r ", end="")
+                logger.info(
+                    f"\nEpoch: {epoch}, Loss: {(error_user / Num_User).data}, LR: {lr:0.5f}\n"
+                    '-----------------------------------------------------------------------------\n'
+                    f'SNR | {"| ".join([f"{x:^10d}" for x in SNR_vali])}|\n'
+                    f'BER | {"| ".join([f"{x:0.8f}" for x in ber])}|\n'
+                    '-----------------------------------------------------------------------------\n'
+                    f"SNR_train changed to {SNR_train} or {SNR_train_db:.4f} db?"
+                )
             # pbar.update(1)
     print("")
     return R_error
@@ -389,7 +384,7 @@ def test(X, sys, SNR_test: torch.Tensor, B=None, Ris=None, R=None):
 
 
 def Save_Model(B, Ris, R, J):
-    print("Saving models..")
+    logger.debug("Saving models..")
     Path("outputs/model").mkdir(parents=True, exist_ok=True)
     torch.save(B.state_dict(), "outputs/model/b1.pkl")
     torch.save(Ris.state_dict(), "outputs/model/ris1.pkl")
@@ -399,6 +394,7 @@ def Save_Model(B, Ris, R, J):
 
 def Load_Model(B, Ris, R, J):
     # todo: test parameter removed,,, is it needed?
+    logger.debug("Loading models..")
     B.load_state_dict(torch.load('outputs/model/b1.pkl'))
     Ris.load_state_dict(torch.load('outputs/model/ris1.pkl'))
     for i in range(J):

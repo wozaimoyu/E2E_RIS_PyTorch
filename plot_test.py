@@ -7,11 +7,15 @@ import numpy as np
 import scipy.io as sio
 import torch
 
+from logging_config import get_logger
+
+logger = get_logger(__name__)
+
 try:
     user32 = ctypes.windll.user32
     user32.SetProcessDPIAware()
 except AttributeError:
-    print("Unable to import windll..")
+    logger.debug("Unable to import windll..")
 
 # Load the .mat files
 BER_0_Trd = np.mean(sio.loadmat(r"figure_data/Tradition_Ber_0.mat")['BER_noRIS'], axis=0)
@@ -70,6 +74,7 @@ if __name__ == "__main__":
     t = time.time()
     ber_plot(
         Ber=torch.rand([300, 6, 6]),
+        fname=Path("test.png"),
         x1=torch.arange(0, 101, 20),
         x2=torch.arange(-5, 21, 5)
     )
