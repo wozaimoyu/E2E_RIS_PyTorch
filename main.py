@@ -5,9 +5,7 @@ import time
 from pathlib import Path
 
 import torch
-# import numpy as np
 import scipy.io as sio
-# from torch.autograd import Variable
 
 import utils
 import dl_model
@@ -39,14 +37,6 @@ channel_fn = cg.rayleigh_chan
 ChaData_BS2User = channel_fn(Ta=8, Ra=2, L=1000)
 ChaData_RIS2User = channel_fn(Ta=1024, Ra=2, L=1000)
 ChaData_BS2RIS = channel_fn(Ta=8, Ra=1024, L=1000)
-
-# ChaData_BS2User = torch.tensor(sio.loadmat('channel/ChaData_BS2User.mat')['Channel_BS2User'])
-# ChaData_RIS2User = torch.tensor(sio.loadmat('channel/ChaData_RIS2User.mat')['Channel_RIS2User'])
-# ChaData_BS2RIS = torch.tensor(sio.loadmat('channel/ChaData_BS2RIS.mat')['Channel_BS2RIS'])
-
-# ChaData_BS2RIS.dtype = 'complex128'
-# ChaData_RIS2User.dtype = 'complex128'
-# ChaData_BS2User.dtype = 'complex128'
 
 logger.info(
     f'ChaData_BS2RIS: {tuple(ChaData_BS2RIS.shape)}\n'
