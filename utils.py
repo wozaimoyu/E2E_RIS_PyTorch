@@ -5,9 +5,18 @@ from logging_config import get_logger
 
 logger = get_logger(__name__)
 
+
 def onehot2bit(X):
     """
     This function converts one-hot encoded data to bit data using a pre-defined bit sequence (BIT_16).
+    For example, X contains
+        [[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+         [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]
+    This will be converted to:
+        [[1, 0, 0, 1],
+         [0, 0, 1, 1]]
+    Which is essentially binary conversion.
+    The length of each element of X is M=16 and the length of each element of bit is K=4
     """
     BIT_16 = torch.tensor(
         [[0, 0, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0], [0, 0, 1, 1],
@@ -24,6 +33,10 @@ def onehot2bit(X):
 
 
 def generate_transmit_data(M, J, num, seed=0):
+    """
+    Generate `num * J` number of transmit symbol.
+    Each symbol is M=16 length array of which any one is 1 and other M-1 are 0.
+    """
     torch.manual_seed(seed)
     symbol_index = torch.randint(M, size=(num * J,))
     X = torch.zeros((num * J, M), dtype=torch.float32)

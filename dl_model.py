@@ -8,8 +8,9 @@ from torch import nn, optim
 import torch.nn.functional as F
 from tqdm.auto import tqdm
 
-import autoencoder as ae
-import sys_model
+import utils
+import utils as ae
+import comn_model
 from logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -155,13 +156,17 @@ def ini_weights(sys):
     return B, Ris, R
 
 
-def Channel(t_data, channel):
+def Channel(t_data: torch.Tensor, channel: torch.Tensor):
     """
     this code performs a channel operation on a given input data tensor "t_data" using a complex-valued channel
     "channel". The operation involves transposing the data tensor, extracting the real and imaginary components of
     the channel, concatenating them to form two new tensors "h1" and "h2", concatenating those tensors along a new
     axis, performing matrix multiplication between the resulting channel tensor and the transposed data tensor,
     and finally transposing the output back to its original shape.
+
+    Channel is a complex value x+jy or r<theta. The theta is the phase shift applied to the signal and r is the
+    amplitude decrease factor. The t_data is essentially multiplied with this complex channel.
+
     """
     cat = torch.cat
     t_data = torch.transpose(t_data, 1, 0)
@@ -176,7 +181,7 @@ def Channel(t_data, channel):
 criterion = nn.BCELoss()
 
 
-def train(X, Y, sys: sys_model.Para, SNR_train: torch.Tensor):
+def train(X, Y, sys: comn_model.Para, SNR_train: torch.Tensor):
     logger.info(f"Training Started..")
     sys.to_log()
     X_train = X
@@ -250,9 +255,9 @@ def train(X, Y, sys: sys_model.Para, SNR_train: torch.Tensor):
                 x_data = B(ae.onehot2bit(X_train[idx, :]))
                 target = ae.onehot2bit(Y_train[idx, :])
                 norm = torch.empty(1, sys.Batch_Size)
-                norm[0, :] = torch.norm(x_data, 2, 1)
+                norm[0, :] = torch.norm(input=x_data, p=2, dim=1)  # sum(abs(x)**p)**(1./p)
 
-                x_data = x_data / torch.t(norm)
+                x_data = x_data / torch.t(norm)  # normalizing x_data
                 ri_data = Channel(x_data, sys.Channel_BS2RIS)
                 ro_data = Ris(ri_data)
                 y_data = Channel(

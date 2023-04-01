@@ -25,9 +25,6 @@ with open(log_file, 'w') as f:
 fh1 = logging.FileHandler(log_file)
 fh1.setLevel(logging.DEBUG)
 
-# fh2 = logging.FileHandler('spam.log')
-# fh2.setLevel(logging.INFO)
-
 ch = logging.StreamHandler(sys.stdout)
 ch.setLevel(logging.INFO)
 

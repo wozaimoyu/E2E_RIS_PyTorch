@@ -9,12 +9,12 @@ import torch
 import scipy.io as sio
 # from torch.autograd import Variable
 
-import autoencoder as ae
-import precoder
+import utils
+import dl_model
 import channel_generator as cg
+from plotter import ber_plot
+from comn_model import Para
 from logging_config import get_logger
-from plot_test import ber_plot
-from sys_model import Para
 
 try:
     from google.colab import files
@@ -35,7 +35,7 @@ except AttributeError:
 logger.info(f"Using pytorch {torch.__version__} on {device}")
 
 # Generate Channel Data
-channel_fn = cg.nakagami_chan
+channel_fn = cg.rayleigh_chan
 ChaData_BS2User = channel_fn(Ta=8, Ra=2, L=1000)
 ChaData_RIS2User = channel_fn(Ta=1024, Ra=2, L=1000)
 ChaData_BS2RIS = channel_fn(Ta=8, Ra=1024, L=1000)
@@ -85,7 +85,7 @@ for s in range(Sample):
             f'position: {User_dis[x]}/{User_dis[-1]}, SNR {sys.SNR_train_db}'
         )
 
-        X_train, Y_train = ae.generate_transmit_data(
+        X_train, Y_train = utils.generate_transmit_data(
             M=sys.M, J=sys.Num_User, num=sys.Num_train,
             seed=random.randint(0, 1000)
         )
@@ -97,7 +97,7 @@ for s in range(Sample):
             sys.load_model = 0
 
         time_start = time.time()
-        precoder.train(X_train, Y_train, sys, sys.SNR_train)
+        dl_model.train(X_train, Y_train, sys, sys.SNR_train)
         time_end = time.time()
         logger.info(f'Time to train: {time_end - time_start}')
 
@@ -109,17 +109,17 @@ for s in range(Sample):
         ber = torch.zeros(SNR_dB.shape)
 
         logger.info("Calculating BER")
-        B, Ris, R = precoder.ini_weights(sys)
-        B, Ris, R = precoder.Load_Model(B, Ris, R, sys.Num_User)
+        B, Ris, R = dl_model.ini_weights(sys)
+        B, Ris, R = dl_model.Load_Model(B, Ris, R, sys.Num_User)
         for i_snr in range(SNR_dB.shape[0]):
             print(f"\r{SNR_dB[i_snr]}", end="")
             SNR = 10 ** (SNR_dB[i_snr] / 10) / sys.Rece_Ampli ** 2
-            X_test, Y_test = ae.generate_transmit_data(
+            X_test, Y_test = utils.generate_transmit_data(
                 M=sys.M, J=sys.Num_User, num=sys.Num_test,
                 seed=random.randint(0, 1000)
             )
-            Y_pred, y_receiver = precoder.test(X_test, sys, SNR, B, Ris, R)
-            ber[i_snr] = ae.BER(X_test, sys, Y_pred, sys.Num_test)
+            Y_pred, y_receiver = dl_model.test(X_test, sys, SNR, B, Ris, R)
+            ber[i_snr] = utils.BER(X_test, sys, Y_pred, sys.Num_test)
             # print(f'The BER at SNR={SNR_dB[i_snr]} is {ber[i_snr]:0.8f}')
         print('\r', end="")
         line = ""

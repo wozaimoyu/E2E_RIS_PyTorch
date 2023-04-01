@@ -32,7 +32,7 @@ class Para:
         self.Num_BS_Antenna = 8
         # self.Num_Subcarrier = 1
         # self.Power_Max = 1  # maximum power limit of BS
-        self.Num_User = 1
+        self.Num_User = self.Pos_User.shape[0]
         self.Num_User_Antenna = 2
         self.Num_RIS = self.Pos_RIS.shape[0]  # number of RIS
         self.Num_RIS_Element = 256  # number of elements in the RIS
