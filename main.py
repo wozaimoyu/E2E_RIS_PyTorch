@@ -10,7 +10,7 @@ import scipy.io as sio
 
 import autoencoder as ae
 import precoder
-from channel_generator import rayleigh_chan
+import channel_generator as cg
 from plot_test import ber_plot
 from sys_model import Para
 
@@ -30,9 +30,10 @@ except AttributeError:
     print(f"Unable to set default device to {device}")
 
 # Generate Channel Data
-ChaData_BS2User = rayleigh_chan(Ta=8, Ra=2, L=1000)
-ChaData_RIS2User = rayleigh_chan(Ta=1024, Ra=2, L=1000)
-ChaData_BS2RIS = rayleigh_chan(Ta=8, Ra=1024, L=1000)
+channel_fn = cg.nakagami_chan
+ChaData_BS2User = channel_fn(Ta=8, Ra=2, L=1000)
+ChaData_RIS2User = channel_fn(Ta=1024, Ra=2, L=1000)
+ChaData_BS2RIS = channel_fn(Ta=8, Ra=1024, L=1000)
 
 # ChaData_BS2User = torch.tensor(sio.loadmat('channel/ChaData_BS2User.mat')['Channel_BS2User'])
 # ChaData_RIS2User = torch.tensor(sio.loadmat('channel/ChaData_RIS2User.mat')['Channel_RIS2User'])
@@ -131,7 +132,8 @@ ber_plot(
 sio.savemat(f'outputs/E2E_Ber_{sys.Num_RIS_Element}.mat', mdict={'Ber': Ber.cpu().numpy()})
 print("Saved ber!")
 
-zip_name = f"outputs_{time.strftime('%Y-%m-%d %H.%M.%S')}"
+Path("zip").mkdir(parents=True, exist_ok=True)
+zip_name = f"zip/outputs_{time.strftime('%Y-%m-%d %H.%M.%S')}"
 shutil.make_archive(
     base_name=zip_name,  # zip file name
     format="zip",

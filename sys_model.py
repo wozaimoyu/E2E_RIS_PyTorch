@@ -32,22 +32,6 @@ class Para:
         self.Num_User_Antenna = 2
         self.Num_RIS = self.Pos_RIS.shape[0]  # number of RIS
         self.Num_RIS_Element = 256  # number of elements in the RIS
-        # self.Phase_Matrix = Variable(  # initial phase matrix
-        #     torch.ones([1, self.Num_RIS_Element * 2]) / np.sqrt(2),
-        #     requires_grad=False
-        # )
-        # self.RIS_radio = 1  # fraction of active RIS elements
-
-        # self.Active_Element = torch.randint(
-        #     self.Num_RIS_Element,
-        #     size=(int(self.RIS_radio * self.Num_RIS_Element),),
-        #     dtype=torch.int64
-        # )
-        # self.Active_Element = torch.cat([
-        #     self.Active_Element,
-        #     self.Active_Element + int(self.Num_RIS_Element)
-        # ], dim=0)
-        # self.Active_Element, _ = torch.sort(self.Active_Element)
 
         # Calculate the distance matrix between the BS, RIS, and user
         self.Dis_BS2RIS = self.Distance_Matrix(self.Pos_BS, self.Pos_RIS)

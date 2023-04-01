@@ -14,11 +14,11 @@ except AttributeError:
     print("Unable to import windll..")
 
 # Load the .mat files
-BER_0_Trd = np.mean(sio.loadmat(r"figure/Tradition_Ber_0.mat")['BER_noRIS'], axis=0)
-BER_128_Trd = np.mean(sio.loadmat(r"figure/Tradition_Ber_128.mat")['BER'], axis=0)
-BER_256_Trd = np.mean(sio.loadmat(r"figure/Tradition_Ber_256.mat")['BER'], axis=0)
-BER_128_e2e = np.mean(sio.loadmat(r"figure/E2E_Ber_128.mat")['Ber'], axis=0)
-BER_256_e2e = np.mean(sio.loadmat(r"figure/E2E_Ber_256.mat")['Ber'], axis=0)
+BER_0_Trd = np.mean(sio.loadmat(r"figure_data/Tradition_Ber_0.mat")['BER_noRIS'], axis=0)
+BER_128_Trd = np.mean(sio.loadmat(r"figure_data/Tradition_Ber_128.mat")['BER'], axis=0)
+BER_256_Trd = np.mean(sio.loadmat(r"figure_data/Tradition_Ber_256.mat")['BER'], axis=0)
+BER_128_e2e = np.mean(sio.loadmat(r"figure_data/E2E_Ber_128.mat")['Ber'], axis=0)
+BER_256_e2e = np.mean(sio.loadmat(r"figure_data/E2E_Ber_256.mat")['Ber'], axis=0)
 
 
 def ber_plot(Ber: torch.Tensor, fname: Path, x1=None, x2=None):
