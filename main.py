@@ -49,8 +49,8 @@ ChaData_BS2RIS = channel_fn(Ta=8, Ra=1024, L=1000)
 # ChaData_BS2User.dtype = 'complex128'
 
 logger.info(
-    f'ChaData_BS2RIS: {tuple(ChaData_BS2RIS.shape)}'
-    f'ChaData_RIS2User: {tuple(ChaData_RIS2User.shape)}'
+    f'ChaData_BS2RIS: {tuple(ChaData_BS2RIS.shape)}\n'
+    f'ChaData_RIS2User: {tuple(ChaData_RIS2User.shape)}\n'
     f'ChaData_BS2User: {tuple(ChaData_BS2User.shape)}\n'
 )
 

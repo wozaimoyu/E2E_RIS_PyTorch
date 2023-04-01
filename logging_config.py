@@ -1,13 +1,24 @@
 import sys
 import logging
-import time
 from pathlib import Path
+
+try:
+    from google.colab import files
+
+    COLAB = True
+except ModuleNotFoundError:
+    COLAB = False
 
 # create logger
 logger = logging.getLogger('E2E')
 logger.setLevel(logging.DEBUG)
 
-log_file = f"outputs/output.log"
+if COLAB:
+    # Remove the root logger's handlers
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+
+log_file = f"outputs/output.txt"
 Path(log_file).parent.mkdir(parents=True, exist_ok=True)
 with open(log_file, 'w') as f:
     f.write('')
